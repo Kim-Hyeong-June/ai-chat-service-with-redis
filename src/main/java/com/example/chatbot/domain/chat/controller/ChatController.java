@@ -4,7 +4,9 @@ import com.example.chatbot.domain.chat.dto.ChatRequest;
 import com.example.chatbot.domain.chat.dto.ChatResponse;
 import com.example.chatbot.domain.chat.service.ChatService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 
 
 @RestController
@@ -14,14 +16,12 @@ public class ChatController {
 
     private final ChatService chatService;
 
-    @PostMapping
-    public ChatResponse chat(@RequestBody ChatRequest request) {
-
-        String answer = chatService.chat(
-                request.userId(),
-                request.message()
-        );
-
-        return new ChatResponse(answer);
+    // 🔥 Streaming API
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> chatStream(
+            @RequestParam String userId,
+            @RequestParam String message
+    ) {
+        return chatService.chatStream(userId, message);
     }
 }

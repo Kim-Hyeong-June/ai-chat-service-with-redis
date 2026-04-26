@@ -5,11 +5,9 @@ import com.example.chatbot.infrastructure.openai.service.OpenAiService;
 import com.example.chatbot.infrastructure.redis.service.ChatHistoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
-import com.example.chatbot.infrastructure.openai.service.OpenAiService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -19,7 +17,7 @@ public class ChatService {
     private final OpenAiService openAiService;
     private final ChatHistoryService chatHistoryService;
 
-    public String chat(String userId, String message) {
+    public Flux<String> chatStream(String userId, String message) {
 
         // 1. 기존 대화 가져오기
         List<OpenAiRequestDto.Message> messages =
@@ -33,30 +31,41 @@ public class ChatService {
             ));
         }
 
-        // 3. user 추가
+        // 3. user 메시지 추가
         messages.add(new OpenAiRequestDto.Message(
                 "user",
                 message
         ));
 
-        // 4. 길이 제한
-        if (messages.size() > 20) {
-            messages = messages.subList(messages.size() - 20, messages.size());
-        }
+        // 4. 길이 제한 (람다 문제 해결)
+        List<OpenAiRequestDto.Message> finalMessages =
+                messages.size() > 20
+                        ? new ArrayList<>(
+                        messages.subList(
+                                messages.size() - 20,
+                                messages.size()
+                        )
+                )
+                        : messages;
 
-        // 5. GPT 호출
-        String response = openAiService.ask(messages);
-        //이전 대화 + 현재 메세지를 같이 보내기 때문에 멀티턴
+        // 5. OpenAI Streaming 호출
+        Flux<String> responseFlux = openAiService.ask(finalMessages);
 
-        // 6. assistant 저장
-        messages.add(new OpenAiRequestDto.Message(
-                "assistant",
-                response
-        ));
+        // 🔥 6. streaming 유지 + Redis 저장 (핵심 수정)
+        StringBuilder fullResponse = new StringBuilder();
 
-        // 7. Redis 저장
-        chatHistoryService.saveMessages(userId, messages);
+        return responseFlux
+                .doOnNext(chunk -> fullResponse.append(chunk)) // 실시간 누적
+                .doOnComplete(() -> {
 
-        return response;
+                    // 전체 응답 저장
+                    finalMessages.add(new OpenAiRequestDto.Message(
+                            "assistant",
+                            fullResponse.toString()
+                    ));
+
+                    // Redis 저장
+                    chatHistoryService.saveMessages(userId, finalMessages);
+                });
     }
 }
