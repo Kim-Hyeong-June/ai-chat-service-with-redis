@@ -1,39 +1,55 @@
 package com.example.chatbot.global.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.web.reactive.error.ErrorWebExceptionHandler;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 
-
-@RestControllerAdvice
+@Component
+@Order(-2)
 @Slf4j
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
 
-    // OpenAI 에러
-    @ExceptionHandler(OpenAiException.class)
-    public ResponseEntity<?> handleOpenAiException(OpenAiException e) {
-        log.error("OpenAI 오류", e);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .body(Map.of(
-                        "error", "OPENAI_ERROR",
-                        "message", e.getMessage()
-                ));
-    }
+    @Override
+    public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
 
-    // 전체 에러
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<?> handleException(Exception e) {
-        log.error("서버 오류", e);
+        log.error("에러 발생: {}", ex.getMessage());
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of(
-                        "error", "INTERNAL_SERVER_ERROR",
-                        "message", e.getMessage()
-                ));
+        HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
+        String errorCode = "INTERNAL_SERVER_ERROR";
+
+        if (ex instanceof IllegalArgumentException) {
+            status = HttpStatus.BAD_REQUEST;
+            errorCode = "BAD_REQUEST";
+        } else if (ex instanceof OpenAiException) {
+            status = HttpStatus.BAD_GATEWAY;
+            errorCode = "OPENAI_ERROR";
+        }
+
+        exchange.getResponse().setStatusCode(status);
+        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+
+        try {
+            byte[] bytes = objectMapper.writeValueAsBytes(Map.of(
+                    "error", errorCode,
+                    "message", ex.getMessage()
+            ));
+            DataBuffer buffer = exchange.getResponse()
+                    .bufferFactory()
+                    .wrap(bytes);
+            return exchange.getResponse().writeWith(Mono.just(buffer));
+        } catch (Exception e) {
+            return Mono.error(e);
+        }
     }
 }
