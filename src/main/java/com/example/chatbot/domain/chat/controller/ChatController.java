@@ -4,8 +4,10 @@ import com.example.chatbot.domain.chat.service.ChatService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -14,11 +16,12 @@ public class ChatController {
     private final ChatService chatService;
 
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatStream(
-            Authentication authentication,  // ✅ JWT에서 자동 추출
-            @RequestParam String message
-    ) {
-        Long userId = (Long) authentication.getPrincipal(); // ✅ JwtAuthFilter에서 넣은 userId
-        return chatService.chatStream(String.valueOf(userId), message);
+    public Flux<String> chatStream(@RequestParam String message) {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(ctx -> ctx.getAuthentication())
+                .map(auth -> (Long) auth.getPrincipal())
+                .flatMapMany(userId ->
+                        chatService.chatStream(String.valueOf(userId), message)
+                );
     }
 }

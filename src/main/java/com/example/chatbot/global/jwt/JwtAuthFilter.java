@@ -24,7 +24,11 @@ public class JwtAuthFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
 
+        log.info("JwtAuthFilter 진입"); // ✅ 추가
+
         String token = extractToken(exchange);
+
+        log.info("token={}", token); // ✅ 추가
 
         if (token != null && jwtUtil.validateToken(token)) {
             Authentication auth = getAuthentication(token);
@@ -32,8 +36,10 @@ public class JwtAuthFilter implements WebFilter {
                     .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
         }
 
+        log.info("토큰 없음 → 그냥 통과"); // ✅ 추가
         return chain.filter(exchange);
     }
+
 
     // ✅ Authorization 헤더에서 토큰 추출
     private String extractToken(ServerWebExchange exchange) {
