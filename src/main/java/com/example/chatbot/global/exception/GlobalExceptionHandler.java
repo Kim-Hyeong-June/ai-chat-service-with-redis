@@ -23,8 +23,6 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
     @Override
     public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
 
-        log.error("에러 발생: {}", ex.getMessage());
-
         HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
         String errorCode = "INTERNAL_SERVER_ERROR";
 

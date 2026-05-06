@@ -41,12 +41,11 @@ public class ChatHistoryService {
         try {
             String key = PREFIX + userId;
             String value = objectMapper.writeValueAsString(messages);
-            log.info("Redis 저장 시도 key={}, value길이={}", key, value.length()); // ✅ 추가
+
             return reactiveRedisTemplate.opsForValue()
                     .set(key, value, TTL)
-                    .doOnSuccess(result -> log.info("Redis set 결과={}", result)) // ✅ 추가
-                    .doOnError(e -> log.error("Redis set 실패={}", e.getMessage())) // ✅ 추가
                     .then();
+
         } catch (Exception e) {
             return Mono.error(new RuntimeException("Redis 저장 실패", e));
         }

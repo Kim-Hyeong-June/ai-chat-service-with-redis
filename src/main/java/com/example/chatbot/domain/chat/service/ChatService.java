@@ -21,12 +21,8 @@ public class ChatService {
 
     public Flux<String> chatStream(String userId, String message) {
 
-        log.info("chatStream 호출 userId={}, message={}", userId, message); // ✅ 추가
-
         return chatHistoryService.getMessages(userId)
                 .flatMapMany(messages -> {
-
-                    log.info("Redis 조회 완료 messages={}", messages.size()); // ✅ 추가
 
                     // 1. system 메시지 (처음만)
                     if (messages.isEmpty()) {
@@ -50,15 +46,9 @@ public class ChatService {
                     // 4. OpenAI 스트리밍 호출
                     StringBuilder fullResponse = new StringBuilder();
 
-                    log.info("OpenAI 호출 시작"); // ✅ 추가
-
                     return openAiService.ask(finalMessages)
                             .doOnNext(chunk -> fullResponse.append(chunk))
-                            .doOnError(e -> log.error("OpenAI 오류: {}", e.getMessage())) // ✅ 추가
                             .doOnComplete(() -> {
-
-                                log.info("OpenAI 응답 완료"); // ✅ 추가
-
                                 // 5. assistant 메시지 추가
                                 finalMessages.add(new OpenAiRequestDto.Message(
                                         "assistant",
