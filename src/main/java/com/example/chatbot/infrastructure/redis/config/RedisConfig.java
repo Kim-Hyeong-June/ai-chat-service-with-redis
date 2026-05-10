@@ -14,7 +14,7 @@ public class RedisConfig {
             ReactiveRedisConnectionFactory factory
     ) {
         StringRedisSerializer serializer = new StringRedisSerializer();
-
+        // 문자열을 Redis에 저장 가능하게 변환해주는 도구
         RedisSerializationContext<String, String> context =
                 RedisSerializationContext.<String, String>newSerializationContext()
                         .key(serializer)
@@ -22,7 +22,7 @@ public class RedisConfig {
                         .hashKey(serializer)
                         .hashValue(serializer)
                         .build();
-
+        // Redis에 데이터를 JSON 문자열 형태로 저장하기 위한 직렬화 설정
         return new ReactiveRedisTemplate<>(factory, context);
     }
 }
