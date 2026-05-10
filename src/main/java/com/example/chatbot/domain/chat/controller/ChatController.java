@@ -16,12 +16,14 @@ public class ChatController {
     private final ChatService chatService;
 
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatStream(@RequestParam String message) {
+    public Flux<String> chatStream(@RequestParam String message ,
+                                   @RequestParam Long conversationId  // ✅ 추가
+    ) {
         return ReactiveSecurityContextHolder.getContext()
                 .map(ctx -> ctx.getAuthentication())
                 .map(auth -> (Long) auth.getPrincipal())
                 .flatMapMany(userId ->
-                        chatService.chatStream(String.valueOf(userId), message)
-                );
+                                chatService.chatStream(String.valueOf(userId), message, conversationId)
+                        );
     }
 }

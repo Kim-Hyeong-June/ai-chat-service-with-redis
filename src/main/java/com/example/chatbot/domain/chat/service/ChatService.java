@@ -18,8 +18,9 @@ public class ChatService {
 
     private final OpenAiService openAiService;
     private final ChatHistoryService chatHistoryService;
+    private final MessageService messageService; // ✅ 추가
 
-    public Flux<String> chatStream(String userId, String message) {
+    public Flux<String> chatStream(String userId, String message , Long conversationId) {
 
         return chatHistoryService.getMessages(userId)
                 .flatMapMany(messages -> {
@@ -55,6 +56,13 @@ public class ChatService {
                                         fullResponse.toString()
                                 ));
 
+                                // ✅ Redis 저장
+                                chatHistoryService.saveMessages(userId, finalMessages).subscribe();
+
+                                // ✅ PostgreSQL 저장
+                                messageService.saveMessage(conversationId, "user", message)
+                                        .then(messageService.saveMessage(conversationId, "assistant", fullResponse.toString()))
+                                        .subscribe();
                                 // 6. Redis 저장 (비동기)
                                 chatHistoryService.saveMessages(userId, finalMessages)
                                         .doOnSuccess(v -> log.info("Redis 저장 완료")) // ✅ 추가
