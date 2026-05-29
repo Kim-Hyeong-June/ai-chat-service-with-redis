@@ -49,8 +49,9 @@ public class ChatService {
 
                     return openAiService.ask(finalMessages)
                             .doOnNext(chunk -> fullResponse.append(chunk))
+                            // flux 에서 데이터 들어올 때 마다 생성
                             .doOnComplete(() -> {
-                                // 5. assistant 메시지 추가
+                                // 5. assistant 메시지 추가 위에서 다 끝나면 실행
                                 finalMessages.add(new OpenAiRequestDto.Message(
                                         "assistant",
                                         fullResponse.toString()
@@ -63,11 +64,9 @@ public class ChatService {
                                 messageService.saveMessage(conversationId, "user", message)
                                         .then(messageService.saveMessage(conversationId, "assistant", fullResponse.toString()))
                                         .subscribe();
-                                // 6. Redis 저장 (비동기)
-                                chatHistoryService.saveMessages(userId, finalMessages)
-                                        .doOnSuccess(v -> log.info("Redis 저장 완료")) // ✅ 추가
-                                        .doOnError(e -> log.error("Redis 저장 실패: {}", e.getMessage())) // ✅ 추가
-                                        .subscribe();
+                                // Reactor의 Mono, Flux 는 기본적으로 lazy(게으름) 상태라서 subscribe 에 실행
+                                // Reactor란 Spring WebFlux의 핵심 비동기 라이브러리 ex> mono , flux
+
                             });
                 });
     }
