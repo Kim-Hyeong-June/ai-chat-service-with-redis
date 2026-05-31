@@ -43,8 +43,6 @@ public class DocumentService {
             //    ↓
             //Tika 파싱
 
-            log.info("문서 파싱 완료 filename={}, chunks={}", filename, chunks.size());
-
             AtomicInteger index = new AtomicInteger(0);
 
             return Flux.fromIterable(chunks).flatMap(chunk -> {
@@ -84,12 +82,13 @@ public class DocumentService {
                 //    ↓
                 //파일 읽기 + Tika 파싱
                 Mono.fromCallable(() -> {
-
                             try (InputStream inputStream = new FileInputStream(filePath)) {
 
                                 String text = tikaService.extractText(inputStream);
+                                List<String> chunks = tikaService.chunk(text);
+                                log.info("문서 파싱 완료 filename={}, chunks={}", filename, chunks.size()); // ✅ 여기
 
-                                return tikaService.chunk(text);
+                                return chunks;
                             }
                         }).subscribeOn(Schedulers.boundedElastic())
                         .flatMapMany(chunks -> {

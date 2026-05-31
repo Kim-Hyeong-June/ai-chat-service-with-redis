@@ -37,7 +37,6 @@ public class TikaService {
             start += CHUNK_SIZE - CHUNK_OVERLAP;
         }
 
-        log.info("청킹 완료 총 {}개", chunks.size());
         return chunks;
     }
 }

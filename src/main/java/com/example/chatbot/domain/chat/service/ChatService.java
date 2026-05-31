@@ -1,5 +1,6 @@
 package com.example.chatbot.domain.chat.service;
 
+import com.example.chatbot.domain.document.service.RagService;
 import com.example.chatbot.infrastructure.openai.dto.OpenAiRequestDto;
 import com.example.chatbot.infrastructure.openai.service.OpenAiService;
 import com.example.chatbot.infrastructure.redis.service.ChatHistoryService;
@@ -19,54 +20,49 @@ public class ChatService {
     private final OpenAiService openAiService;
     private final ChatHistoryService chatHistoryService;
     private final MessageService messageService; // ✅ 추가
+    private final RagService ragService; // ✅ 추가
 
-    public Flux<String> chatStream(String userId, String message , Long conversationId) {
+    public Flux<String> chatStream(String userId, String message, Long conversationId) {
 
-        return chatHistoryService.getMessages(userId)
-                .flatMapMany(messages -> {
+        return ragService.retrieveContext(message, Long.parseLong(userId)) // ✅ RAG 검색
+                .flatMapMany(context -> {
 
-                    // 1. system 메시지 (처음만)
-                    if (messages.isEmpty()) {
-                        messages.add(new OpenAiRequestDto.Message(
-                                "system",
-                                "너는 친절한 AI 상담원이다"
-                        ));
-                    }
+                    return chatHistoryService.getMessages(userId)
+                            //Mono<List<OpenAiRequestDto.Message>> 반환
+                            .flatMapMany(messages -> {
 
-                    // 2. user 메시지 추가
-                    messages.add(new OpenAiRequestDto.Message("user", message));
+                                if (messages.isEmpty()) {
+                                    // ✅ RAG 컨텍스트 시스템 프롬프트에 주입
+                                    String systemPrompt = context.isEmpty()
+                                            ? "너는 친절한 AI 상담원이다."
+                                            : "너는 친절한 AI 상담원이다. 아래 문서를 참고해서 답변해라.\n\n" + context;
 
-                    // 3. 길이 제한
-                    List<OpenAiRequestDto.Message> finalMessages =
-                            messages.size() > 20
-                                    ? new ArrayList<>(messages.subList(
-                                    messages.size() - 20,
-                                    messages.size()))
-                                    : messages;
+                                    messages.add(new OpenAiRequestDto.Message("system", systemPrompt));
+                                }
 
-                    // 4. OpenAI 스트리밍 호출
-                    StringBuilder fullResponse = new StringBuilder();
+                                messages.add(new OpenAiRequestDto.Message("user", message));
 
-                    return openAiService.ask(finalMessages)
-                            .doOnNext(chunk -> fullResponse.append(chunk))
-                            // flux 에서 데이터 들어올 때 마다 생성
-                            .doOnComplete(() -> {
-                                // 5. assistant 메시지 추가 위에서 다 끝나면 실행
-                                finalMessages.add(new OpenAiRequestDto.Message(
-                                        "assistant",
-                                        fullResponse.toString()
-                                ));
+                                List<OpenAiRequestDto.Message> finalMessages =
+                                        messages.size() > 20
+                                                ? new ArrayList<>(messages.subList(messages.size() - 20, messages.size()))
+                                                : messages;
 
-                                // ✅ Redis 저장
-                                chatHistoryService.saveMessages(userId, finalMessages).subscribe();
+                                StringBuilder fullResponse = new StringBuilder();
 
-                                // ✅ PostgreSQL 저장
-                                messageService.saveMessage(conversationId, "user", message)
-                                        .then(messageService.saveMessage(conversationId, "assistant", fullResponse.toString()))
-                                        .subscribe();
-                                // Reactor의 Mono, Flux 는 기본적으로 lazy(게으름) 상태라서 subscribe 에 실행
-                                // Reactor란 Spring WebFlux의 핵심 비동기 라이브러리 ex> mono , flux
+                                return openAiService.ask(finalMessages)
+                                        .doOnNext(chunk -> fullResponse.append(chunk))
+                                        .doOnComplete(() -> {
+                                            finalMessages.add(new OpenAiRequestDto.Message(
+                                                    "assistant", fullResponse.toString()));
 
+                                            chatHistoryService.saveMessages(userId, finalMessages)
+                                                    .doOnError(e -> log.error("Redis 저장 실패", e))
+                                                    .subscribe();
+
+                                            messageService.saveMessage(conversationId, "user", message)
+                                                    .then(messageService.saveMessage(conversationId, "assistant", fullResponse.toString()))
+                                                    .subscribe();
+                                        });
                             });
                 });
     }

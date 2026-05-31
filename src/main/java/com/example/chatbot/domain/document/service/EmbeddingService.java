@@ -32,7 +32,6 @@ public class EmbeddingService {
                                             .mapToObj(String::valueOf)
                                             .collect(Collectors.joining(",", "[", "]"));
 
-                                    log.info("청크 임베딩 저장 chunkId={}", chunk.getId());
                                     return documentChunkRepository.updateEmbedding(chunk.getId(), vectorStr);
                                 })
                 )

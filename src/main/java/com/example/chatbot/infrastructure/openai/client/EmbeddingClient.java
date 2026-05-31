@@ -45,7 +45,6 @@ public class EmbeddingClient {
                         vector[i] = embedding.get(i).floatValue();
                     }
 
-                    log.info("임베딩 생성 완료 차원={}", vector.length);
                     return vector;
                 });
     }
