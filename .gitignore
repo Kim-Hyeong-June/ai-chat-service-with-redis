@@ -67,3 +67,5 @@ application-*.yml
 # Others
 # ==============================
 *.class
+src/main/resources/application.yml
+uploads/

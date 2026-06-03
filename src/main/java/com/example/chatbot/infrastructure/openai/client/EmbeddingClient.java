@@ -19,11 +19,19 @@ public class EmbeddingClient {
 
     private final WebClient webClient;
 
-    @Value("${openai.api.key}")
+    @Value("${openai.api-key}")
     private String apiKey;
 
     // ✅ 텍스트 → 벡터 변환
     public Mono<float[]> embed(String text) {
+
+        log.info("apiKey null={}", apiKey == null);
+
+        if (apiKey != null) {
+            log.info("apiKey prefix={}", apiKey.substring(0, 25));
+            log.info("apiKey length={}", apiKey.length());
+        }
+
         Map<String, Object> request = Map.of(
                 "model", "text-embedding-3-small",
                 "input", text
@@ -35,6 +43,14 @@ public class EmbeddingClient {
                 .header("Content-Type", "application/json")
                 .bodyValue(request)
                 .retrieve()
+                .onStatus(
+                        status -> status.isError(),
+                        response -> response.bodyToMono(String.class)
+                                .flatMap(body -> {
+                                    log.error("OpenAI Error Body={}", body);
+                                    return Mono.error(new RuntimeException(body));
+                                })
+                )
                 .bodyToMono(Map.class)
                 .map(response -> {
                     List<Map<String, Object>> data = (List<Map<String, Object>>) response.get("data");
