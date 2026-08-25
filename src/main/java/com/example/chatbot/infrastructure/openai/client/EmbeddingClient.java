@@ -28,8 +28,8 @@ public class EmbeddingClient {
         log.info("apiKey null={}", apiKey == null);
 
         if (apiKey != null) {
-            log.info("apiKey prefix={}", apiKey.substring(0, 25));
-            log.info("apiKey length={}", apiKey.length());
+            log.info("apiKey null={}", apiKey == null);
+            log.info("apiKey length={}", apiKey == null ? null : apiKey.length());
         }
 
         Map<String, Object> request = Map.of(

@@ -1,5 +1,6 @@
 package com.example.chatbot.domain.document.service;
 
+import com.example.chatbot.domain.document.dto.SearchResult;
 import com.example.chatbot.infrastructure.openai.client.EmbeddingClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,24 +32,42 @@ public class RagService {
 
                     // ✅ pgvector 유사도 검색 (코사인 거리)
                     return databaseClient.sql("""
-                            SELECT dc.content
-                            FROM document_chunks dc
-                            JOIN documents d ON dc.document_id = d.id
-                            WHERE d.user_id = :userId
-                              AND dc.embedding IS NOT NULL
-                            ORDER BY dc.embedding <=> CAST(:embedding AS vector)
-                            LIMIT 3
-                            """)
+        SELECT
+        dc.content,
+        dc.embedding <=> CAST(:embedding AS vector) AS distance
+        FROM document_chunks dc
+        JOIN documents d
+          ON dc.document_id = d.id
+        WHERE d.user_id = :userId
+        ORDER BY distance
+        LIMIT 3
+        """)
                             .bind("userId", userId)
                             .bind("embedding", vectorStr)
-                            .map((row, metadata) -> row.get("content", String.class))
+                            .map((row, metadata) ->
+                                    new SearchResult(
+                                            row.get("content", String.class),
+                                            row.get("distance", Double.class)
+                                    )
+                            )
                             .all()
                             .collectList()
-                            .map(chunks -> {
-                                if (chunks.isEmpty()) return "";
+                            .map(results -> {
 
-                                String context = String.join("\n\n", chunks);
-                                return context;
+                                if (results.isEmpty()) {
+                                    return "";
+                                }
+                                // 가장 유사한 청크
+                                double topDistance = results.get(0).getDistance();
+
+                                if (topDistance > 0.6) {
+                                    log.info("관련 문서 없음 distance={}", topDistance);
+                                    return "";
+                                }
+
+                                return results.stream()
+                                        .map(SearchResult::getContent)
+                                        .collect(Collectors.joining("\n\n"));
                             });
                 });
     }

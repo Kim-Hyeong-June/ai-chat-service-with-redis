@@ -8,62 +8,114 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j  // ✅ 추가
+@Slf4j
 public class ChatService {
 
     private final OpenAiService openAiService;
     private final ChatHistoryService chatHistoryService;
-    private final MessageService messageService; // ✅ 추가
-    private final RagService ragService; // ✅ 추가
+    private final MessageService messageService;
+    private final RagService ragService;
 
     public Flux<String> chatStream(String userId, String message, Long conversationId) {
 
-        return ragService.retrieveContext(message, Long.parseLong(userId)) // ✅ RAG 검색
-                .flatMapMany(context -> {
+        return ragService.retrieveContext(message, Long.parseLong(userId))
+                .flatMapMany(context ->
 
-                    return chatHistoryService.getMessages(userId)
-                            //Mono<List<OpenAiRequestDto.Message>> 반환
-                            .flatMapMany(messages -> {
+                        chatHistoryService.getMessages(userId)
+                                .flatMapMany(historyMessages -> {
 
-                                if (messages.isEmpty()) {
-                                    // ✅ RAG 컨텍스트 시스템 프롬프트에 주입
+                                    // 1. 매 요청마다 System Prompt 생성
                                     String systemPrompt = context.isEmpty()
                                             ? "너는 친절한 AI 상담원이다."
-                                            : "너는 친절한 AI 상담원이다. 아래 문서를 참고해서 답변해라.\n\n" + context;
+                                            : """
+                                              너는 친절한 AI 상담원이다.
+                                              아래 문서를 참고해서 답변해라.
 
-                                    messages.add(new OpenAiRequestDto.Message("system", systemPrompt));
-                                }
+                                              %s
+                                              """.formatted(context);
 
-                                messages.add(new OpenAiRequestDto.Message("user", message));
+                                    // 2. OpenAI 요청용 메시지 생성
+                                    List<OpenAiRequestDto.Message> requestMessages =
+                                            new ArrayList<>();
 
-                                List<OpenAiRequestDto.Message> finalMessages =
-                                        messages.size() > 20
-                                                ? new ArrayList<>(messages.subList(messages.size() - 20, messages.size()))
-                                                : messages;
+                                    requestMessages.add(
+                                            new OpenAiRequestDto.Message(
+                                                    "system",
+                                                    systemPrompt
+                                            )
+                                    );
 
-                                StringBuilder fullResponse = new StringBuilder();
+                                    requestMessages.addAll(historyMessages);
 
-                                return openAiService.ask(finalMessages)
-                                        .doOnNext(chunk -> fullResponse.append(chunk))
-                                        .doOnComplete(() -> {
-                                            finalMessages.add(new OpenAiRequestDto.Message(
-                                                    "assistant", fullResponse.toString()));
+                                    requestMessages.add(
+                                            new OpenAiRequestDto.Message(
+                                                    "user",
+                                                    message
+                                            )
+                                    );
 
-                                            chatHistoryService.saveMessages(userId, finalMessages)
-                                                    .doOnError(e -> log.error("Redis 저장 실패", e))
-                                                    .subscribe();
+                                    // 최근 20개만 유지
+                                    if (requestMessages.size() > 20) {
+                                        requestMessages = new ArrayList<>(
+                                                requestMessages.subList(
+                                                        requestMessages.size() - 20,
+                                                        requestMessages.size()
+                                                )
+                                        );
+                                    }
 
-                                            messageService.saveMessage(conversationId, "user", message)
-                                                    .then(messageService.saveMessage(conversationId, "assistant", fullResponse.toString()))
-                                                    .subscribe();
-                                        });
-                            });
-                });
+                                    StringBuilder fullResponse =
+                                            new StringBuilder();
+
+                                    // Redis 저장용 (system 제외)
+
+                                    return openAiService.ask(requestMessages)
+                                            .doOnNext(fullResponse::append)
+                                            .doOnComplete(() -> {
+                                                List<OpenAiRequestDto.Message> historyToSave =
+                                                        new ArrayList<>(historyMessages);
+
+                                                historyToSave.add(
+                                                        new OpenAiRequestDto.Message(
+                                                                "user",
+                                                                message
+                                                        )
+                                                );
+
+                                                historyToSave.add(
+                                                        new OpenAiRequestDto.Message(
+                                                                "assistant",
+                                                                fullResponse.toString()
+                                                        )
+                                                );
+
+                                                if (historyToSave.size() > 20) {
+                                                    historyToSave.subList(
+                                                            0,
+                                                            historyToSave.size() - 20
+                                                    ).clear();
+                                                }
+
+                                                Mono.when(
+                                                                chatHistoryService.saveMessages(userId, historyToSave),
+                                                                messageService.saveMessage(conversationId, "user", message),
+                                                                messageService.saveMessage(
+                                                                        conversationId,
+                                                                        "assistant",
+                                                                        fullResponse.toString()
+                                                                )
+                                                        )
+                                                        .doOnError(e -> log.error("저장 실패", e))
+                                                        .subscribe();
+                                                });
+                                })
+                );
     }
 }

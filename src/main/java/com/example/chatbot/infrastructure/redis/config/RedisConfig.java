@@ -22,7 +22,7 @@ public class RedisConfig {
                         .hashKey(serializer)
                         .hashValue(serializer)
                         .build();
-        // Redis에 데이터를 JSON 문자열 형태로 저장하기 위한 직렬화 설정
+
         return new ReactiveRedisTemplate<>(factory, context);
     }
 }
